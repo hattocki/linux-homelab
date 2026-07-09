@@ -1,89 +1,298 @@
-# 🛠 Troubleshooting
+# 🔧 Troubleshooting — Prometheus + Grafana Monitoring Lab
 
-This document describes issues encountered during setup of the monitoring stack and their resolution.
-
----
-
-## Node Exporter service not starting after reboot
-
-### Description
-Node Exporter was installed, but did not start automatically after system reboot.
-
-### Resolution
-The systemd service was enabled to ensure automatic startup:
-
-```bash
-sudo systemctl enable node_exporter
-sudo systemctl start node_exporter
-```
-
-Service status verified with:
-
-```bash
-systemctl status node_exporter
-```
+В данном разделе описаны проблемы, которые возникали во время настройки системы мониторинга, процесс диагностики и найденные решения.
 
 ---
 
-## Prometheus target unavailable (DOWN state)
+# 1. Alert Host Down не срабатывал
 
-### Description
-Prometheus showed the monitored host as unavailable.
+## Проблема
 
-### Investigation
-Connectivity between Prometheus and Node Exporter was verified:
-
-```bash
-curl http://<VM1_IP>:9100/metrics
-```
-
-### Resolution
-Prometheus configuration was updated to ensure correct target definition:
-
-```yaml
-scrape_configs:
-  - job_name: "vm1"
-    static_configs:
-      - targets: ["192.168.56.101:9100"]
-```
+После выключения VM1 Alert в Grafana не переходил в состояние Firing.
 
 ---
 
-## Grafana dashboards showing no data
+## Диагностика
 
-### Description
-Grafana panels did not display metrics.
-
-### Resolution
-- Verified Prometheus datasource configuration
-- Ensured Prometheus was reachable from Grafana
-- Validated queries in Explore mode
-
-Example test query:
+Первым шагом была проверена метрика доступности target:
 
 ```promql
 up
 ```
 
+Результат:
+
+```
+up{instance="192.168.56.101:9100",job="vm1"} 0
+```
+
+Это означало, что Prometheus корректно определял недоступность Node Exporter.
+
 ---
 
-## PromQL query returned empty results
+## Причина
 
-### Description
-Certain metrics did not return data when queried directly.
+В Alert Rule была некорректно настроена логика проверки.
 
-### Resolution
-Correct query type usage was applied for counter metrics:
+---
+
+## Решение
+
+Создано правило:
+
+PromQL:
 
 ```promql
-rate(node_cpu_seconds_total[1m])
+up
+```
+
+Условие:
+
+```
+is below 0.5
+```
+
+Логика:
+
+```
+1 — сервер доступен
+
+0 — сервер недоступен
+```
+
+После настройки Alert корректно переходил:
+
+```
+Normal → Pending → Firing
 ```
 
 ---
 
-## Key notes
+# 2. Memory Alert не срабатывал
 
-- Always verify service status via systemd
-- Ensure network connectivity between monitoring components
-- Validate PromQL expressions based on metric type
-- Use Grafana Explore for query debugging
+## Проблема
+
+При создании нагрузки на память значение Memory Usage превышало установленный порог, но Alert не срабатывал.
+
+---
+
+## Диагностика
+
+Были проверены метрики Prometheus.
+
+Обнаружено, что запрос возвращал данные от нескольких источников:
+
+```
+job="vm1"
+
+job="node"
+```
+
+Из-за этого Grafana могла анализировать не тот показатель.
+
+---
+
+## Причина
+
+PromQL запрос не содержал фильтрацию по конкретному серверу.
+
+---
+
+## Решение
+
+Добавлена фильтрация по label:
+
+```promql
+{job="vm1"}
+```
+
+Пример:
+
+```promql
+100 * (
+1 -
+(
+node_memory_MemAvailable_bytes{job="vm1"}
+/
+node_memory_MemTotal_bytes{job="vm1"}
+)
+)
+```
+
+После изменения Alert начал корректно отслеживать VM1.
+
+---
+
+# 3. Disk Alert показывал некорректные значения
+
+## Проблема
+
+При настройке мониторинга диска Prometheus возвращал несколько значений.
+
+В список попадали:
+
+- корневой раздел `/`;
+- tmpfs;
+- дополнительные mountpoint.
+
+---
+
+## Диагностика
+
+Была проверена команда:
+
+```bash
+df -h
+```
+
+Обнаружено:
+
+```
+/dev/sda2  /
+tmpfs
+/dev/sr0
+```
+
+---
+
+## Причина
+
+Метрика:
+
+```promql
+node_filesystem_size_bytes
+```
+
+возвращает информацию по всем файловым системам.
+
+---
+
+## Решение
+
+Добавлена фильтрация:
+
+```promql
+mountpoint="/"
+```
+
+Исключены временные файловые системы:
+
+```promql
+fstype!="tmpfs"
+fstype!="overlay"
+```
+
+Итоговый запрос:
+
+```promql
+100 * (
+1 -
+(
+node_filesystem_avail_bytes{
+job="vm1",
+mountpoint="/",
+fstype!="tmpfs",
+fstype!="overlay"
+}
+/
+node_filesystem_size_bytes{
+job="vm1",
+mountpoint="/",
+fstype!="tmpfs",
+fstype!="overlay"
+}
+)
+)
+```
+
+---
+
+# 4. Stress тест памяти не создавал стабильную нагрузку
+
+## Проблема
+
+При тестировании Memory Alert нагрузка постоянно менялась:
+
+```
+50% → 80% → 50%
+```
+
+Alert не всегда успевал перейти в Firing.
+
+---
+
+## Попытка решения
+
+Использовался:
+
+```bash
+stress-ng --vm 1 --vm-bytes 90% --timeout 180s
+```
+
+Но система завершала процесс из-за нехватки ресурсов.
+
+---
+
+## Причина
+
+VM имела ограниченный объём оперативной памяти.
+
+---
+
+## Решение
+
+Использована более безопасная нагрузка:
+
+```bash
+stress --vm 1 --vm-bytes 250M --timeout 180
+```
+
+После этого была проверена работа Alert Rule.
+
+---
+
+# 5. Проверка жизненного цикла Alert
+
+Во время тестирования были проверены состояния:
+
+```
+Normal
+   ↓
+Pending
+   ↓
+Firing
+```
+
+Где:
+
+## Normal
+
+Условие Alert не выполняется.
+
+---
+
+## Pending
+
+Условие выполняется, но ещё не прошло заданное время `For`.
+
+---
+
+## Firing
+
+Условие выполняется необходимое время, Alert активен.
+
+---
+
+# Полученные навыки при диагностике
+
+В процессе настройки были изучены:
+
+- проверка Prometheus targets;
+- анализ метрик через PromQL;
+- работа с labels:
+  - job;
+  - instance;
+  - mountpoint;
+- настройка условий Alert Rules;
+- поиск причин, почему Alert не срабатывает;
+- проверка состояния Normal/Pending/Firing.

@@ -1,202 +1,483 @@
-# 📊 Monitoring Lab (Prometheus + Grafana + Node Exporter)
+# 📊 Система мониторинга Linux-серверов (Prometheus + Grafana + Node Exporter)
 
-A simple DevOps monitoring lab built using Linux virtual machines.
+## 📌 Описание проекта
 
----
+В рамках проекта была развернута система мониторинга Linux-виртуальных машин на базе:
 
-# 🧠 Overview
+- Node Exporter
+- Prometheus
+- Grafana
 
-This project demonstrates a full monitoring stack:
+Цель проекта:
 
-- Node Exporter (metrics agent)
-- Prometheus (metrics collector)
-- Grafana (visualization layer)
-
----
-
-# 🏗 Architecture
-
-VM1 (ubuntu1)
-    └── Node Exporter (9100)
-            ↓
-VM2 (ubuntu2)
-    └── Prometheus (9090)
-            ↓
-        Grafana (3000)
+- изучить принципы построения системы мониторинга;
+- научиться собирать системные метрики;
+- разобраться с PromQL;
+- настроить визуализацию состояния серверов;
+- реализовать автоматические оповещения при возникновении проблем.
 
 ---
 
-# 🖥️ Infrastructure
+# 🏗 Архитектура проекта
 
-## VM1 - Target Machine
+```
+VM1 (Ubuntu)
+│
+└── Node Exporter :9100
+    │
+    │ Сбор системных метрик
+    │
+    ↓
 
-- OS: Ubuntu
-- Service: node_exporter
-- Role: exposes system metrics
-- Port: 9100
+VM2 (Ubuntu)
 
-Systemd service:
-- auto-start enabled
-- restart on failure
-
----
-
-## VM2 - Monitoring Server
-
-### Prometheus
-- scrapes metrics from VM1
-- stores time-series data
-- evaluates PromQL queries
-
-### Grafana
-- visualizes metrics
-- dashboards:
-  - CPU
-  - Memory
-  - Disk
-  - Network
-
----
-
-# 📊 Metrics collected
-
-- CPU usage
-- Memory usage
-- Disk usage
-- Network traffic
-- System health (up metric)
-
----
-
-# 📈 PromQL Queries
-
-## CPU usage
-```promql
-100 - (avg by(instance)(rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100)
+├── Prometheus :9090
+│   │
+│   └── Сбор и хранение временных рядов
+│
+└── Grafana :3000
+    │
+    └── Dashboards + Alert Rules
 ```
 
 ---
 
-## Memory usage
-```promql
-100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))
+# 🖥 Инфраструктура
+
+## VM1 — контролируемый сервер
+
+Назначение:
+
+- тестовая Linux-виртуальная машина;
+- источник системных метрик.
+
+Установленный компонент:
+
+## Node Exporter
+
+Node Exporter используется для сбора информации о состоянии Linux-системы.
+
+Собираемые показатели:
+
+- загрузка CPU;
+- использование оперативной памяти;
+- состояние дисковой подсистемы;
+- сетевой трафик;
+- доступность сервера.
+
+Порт:
+
+```
+9100
+```
+
+Особенности настройки:
+
+- создан systemd service;
+- включён автозапуск;
+- настроен restart при сбое.
+
+---
+
+# VM2 — сервер мониторинга
+
+Назначение:
+
+- сбор метрик;
+- хранение временных рядов;
+- визуализация данных;
+- настройка автоматических оповещений.
+
+---
+
+# Prometheus
+
+Prometheus используется для:
+
+- получения метрик от Node Exporter;
+- хранения временных рядов;
+- выполнения PromQL запросов;
+- проверки состояния targets.
+
+Порт:
+
+```
+9090
 ```
 
 ---
 
-## Disk usage
+# Grafana
+
+Grafana используется для:
+
+- создания dashboards;
+- визуализации состояния серверов;
+- настройки Alert Rules.
+
+Порт:
+
+```
+3000
+```
+
+Созданные dashboards:
+
+- CPU Usage;
+- Memory Usage;
+- Disk Usage;
+- Network Traffic.
+
+---
+
+# 📈 Собираемые метрики
+
+## CPU
+
+Контроль загрузки процессора.
+
+Используется для:
+
+- анализа нагрузки;
+- настройки CPU Alert.
+
+---
+
+## Memory
+
+Контроль использования оперативной памяти.
+
+Отслеживаются:
+
+- общий объём памяти;
+- доступная память;
+- процент использования.
+
+---
+
+## Disk
+
+Контроль заполненности файловой системы.
+
+Мониторится:
+
+```
+/
+```
+
+корневой раздел Linux.
+
+---
+
+## Network
+
+Контроль:
+
+- входящего трафика;
+- исходящего трафика.
+
+---
+
+## System Availability
+
+Используется встроенная метрика Prometheus:
+
 ```promql
-100 * (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes))
+up
+```
+
+Позволяет определить доступность сервера.
+
+---
+
+# 🚨 Настроенные Alert Rules
+
+В Grafana были созданы правила автоматического оповещения.
+
+---
+
+## CPU Usage Alert
+
+Условие:
+
+```
+CPU Usage > 80%
+```
+
+Время подтверждения:
+
+```
+For: 1 минута
 ```
 
 ---
 
-## Network RX
-```promql
-rate(node_network_receive_bytes_total[1m])
+## Memory Usage Alert
+
+Условие:
+
+```
+Memory Usage > 80%
 ```
 
-## Network TX
-```promql
-rate(node_network_transmit_bytes_total[1m])
+Время подтверждения:
+
+```
+For: 1 минута
 ```
 
 ---
 
-## System health
+## Disk Usage Alert
+
+Контролируемый раздел:
+
+```
+/
+```
+
+Условие:
+
+```
+Disk Usage > 85%
+```
+
+---
+
+## Host Down Alert
+
+Используемая метрика:
+
+```promql
+up
+```
+
+Логика:
+
+```
+1 — сервер доступен
+
+0 — сервер недоступен
+```
+
+Условие:
+
+```
+up < 0.5
+```
+
+При потере связи с Node Exporter сервер считается недоступным.
+
+---
+
+# 🔎 Используемые PromQL запросы
+
+## Проверка доступности сервера
+
 ```promql
 up
 ```
 
 ---
 
-# ⚙️ Setup Summary
+## Использование CPU
 
-## Node Exporter
-- installed manually
-- systemd service created
-- enabled at boot
-
-## Prometheus
-- configured via prometheus.yml
-- targets VM1:9100
-
-## Grafana
-- connected to Prometheus datasource
-- dashboards created manually
+```promql
+100 - (
+avg by(instance)
+(rate(node_cpu_seconds_total{mode="idle"}[1m]))
+* 100
+)
+```
 
 ---
 
-# 📸 Screenshots
+## Использование памяти
+
+```promql
+100 * (
+1 -
+(
+node_memory_MemAvailable_bytes{job="vm1"}
+/
+node_memory_MemTotal_bytes{job="vm1"}
+)
+)
+```
+
+---
+
+## Использование диска
+
+```promql
+100 * (
+1 -
+(
+node_filesystem_avail_bytes{
+job="vm1",
+mountpoint="/",
+fstype!="tmpfs",
+fstype!="overlay"
+}
+/
+node_filesystem_size_bytes{
+job="vm1",
+mountpoint="/",
+fstype!="tmpfs",
+fstype!="overlay"
+}
+)
+)
+```
+
+---
+
+# 🔧 Решённые проблемы
+
+## Alert Memory не срабатывал
+
+### Проблема
+
+При создании нагрузки значение памяти превышало установленный порог, но Alert не переходил в Firing.
+
+### Причина:
+
+- несколько targets возвращали метрики;
+- отсутствовала фильтрация по labels;
+- учитывались разные источники данных.
+
+### Решение:
+
+Добавлена фильтрация:
+
+```promql
+{job="vm1"}
+```
+
+---
+
+# Disk Alert показывал некорректные значения
+
+### Проблема:
+
+Prometheus возвращал данные по нескольким файловым системам:
+
+- /
+- tmpfs
+- /run
+- дополнительные mountpoint
+
+### Решение:
+
+Добавлена фильтрация:
+
+```promql
+mountpoint="/"
+```
+
+---
+
+# Проверка Host Down Alert
+
+Проверка выполнялась:
+
+- остановкой Node Exporter;
+- выключением виртуальной машины.
+
+До отключения:
+
+```
+up = 1
+```
+
+После отключения:
+
+```
+up = 0
+```
+
+Alert успешно переходил:
+
+```
+Normal → Pending → Firing
+```
+
+---
+
+# 🧠 Полученные навыки
+
+В ходе работы были изучены:
+
+- Linux administration;
+- systemd;
+- управление сервисами Linux;
+- Node Exporter;
+- Prometheus;
+- Grafana;
+- PromQL;
+- Labels:
+  - job;
+  - instance;
+  - mountpoint;
+- настройка Alert Rules;
+- диагностика проблем мониторинга.
+
+---
+
+# 📂 Структура проекта
+
+```
+monitoring-lab/
+
+├── README.md
+├── architecture.md
+├── troubleshooting.md
+├── configs/
+├── dashboards/
+├── screenshots/
+├── vm1/
+└── vm2/
+```
+
+---
+
+# 📸 Скриншоты
 
 ## Grafana Dashboards
 
-### CPU
-![CPU](screenshots/cpu.png)
+- CPU Dashboard
+- Memory Dashboard
+- Disk Dashboard
+- Network Dashboard
 
-### Memory
-![RAM](screenshots/ram.png)
-
-### Disk
-![Disk](screenshots/disk.png)
-
-### Network
-![Network](screenshots/network.png)
-
----
 
 ## Prometheus
 
-### Targets
-![Targets](screenshots/prometheus_targets.png)
+- Targets
+- PromQL queries
 
-### Query result (up metric)
-![Query Up](screenshots/query-up.png)
 
----
+## Alerts
 
-# 📡 Ports Used
-
-| Service        | Port |
-|----------------|------|
-| Node Exporter  | 9100 |
-| Prometheus     | 9090 |
-| Grafana        | 3000 |
+- CPU Alert
+- Memory Alert
+- Disk Alert
+- Host Down Alert
 
 ---
 
-# 🎯 Goal of Project
+# 📌 Статус проекта
 
-To understand:
-
-- Linux monitoring
-- metrics collection
-- time-series databases
-- visualization systems
-- systemd services
-
----
-
-# 🧠 Key Skills Learned
-
-- PromQL basics
-- Grafana dashboards
-- Linux service management
-- monitoring architecture design
-- debugging metrics pipelines
+✅ Node Exporter настроен  
+✅ Prometheus собирает метрики  
+✅ Grafana подключена к Prometheus  
+✅ Dashboards созданы  
+✅ Alert Rules настроены  
+✅ Проверена работа уведомлений  
+✅ Проведена диагностика проблем мониторинга  
 
 ---
 
-# 👨‍💻 Author
+# 👨‍💻 Автор Zaurbek Uzhakhov
 
-DevOps learning project by **hattocki**
-
----
-
-# 🚀 Status
-
-✔ Node Exporter running  
-✔ Prometheus scraping metrics  
-✔ Grafana dashboards created  
-✔ GitHub project structured  
-✔ Screenshots added
+DevOps Homelab Project
